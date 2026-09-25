@@ -14,4 +14,4 @@ RUN pip install --upgrade pip setuptools wheel && \
         pyyaml \
         requests \
         psycopg[binary] && \
-    pip install --no-cache-dir -e .
+    pip install --no-cache-dir -e .[auth]
