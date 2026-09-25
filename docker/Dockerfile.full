@@ -13,3 +13,19 @@ RUN pip install --upgrade pip setuptools wheel && \
         pyyaml \
         requests \
         psycopg[binary]
+
+# Overlay the custom Azure SSO auth modules onto the installed mlflow package.
+# These files are not part of the PyPI `mlflow` distribution, so without this
+# step `mlflow.server.auth.azure_auth` is missing and the server fails at
+# startup with ModuleNotFoundError. Requires the build context to be the repo
+# root (see .github/workflows/build-full-image.yml).
+COPY mlflow/server/auth/azure_auth.py \
+     mlflow/server/auth/azure_auth_groups.py \
+     mlflow/server/auth/azure_auth_groups_flexible.py \
+     mlflow/server/auth/azure_auth_selector.py \
+     /tmp/custom_auth/
+
+RUN AUTH_DIR="$(python -c 'import mlflow.server.auth, os; print(os.path.dirname(mlflow.server.auth.__file__))')" && \
+    cp /tmp/custom_auth/*.py "$AUTH_DIR/" && \
+    rm -rf /tmp/custom_auth && \
+    python -c "import mlflow.server.auth.azure_auth as m; print('azure_auth import OK:', m.__file__)"

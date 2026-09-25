@@ -104,4 +104,4 @@ jobs:
             --sbom=false \
             -t "docker.io/${DOCKERHUB_USERNAME}/mlflow:${VERSION}" \
             --output type=image,push=true,oci-mediatypes=false \
-            docker
+            .
