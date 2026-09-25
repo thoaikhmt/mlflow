@@ -1,0 +1,107 @@
+name: Build Full Image
+
+# Rebuilds the `-full` variant (docker/Dockerfile.full) and pushes it to Docker
+# Hub as a single-arch Docker schema2 manifest, without provenance or SBOM
+# attestations. Upstream (`ghcr.io/mlflow/mlflow`) publishes an OCI image index
+# (linux/amd64 + linux/arm64) that also carries two `unknown/unknown` buildx
+# attestation manifests; Docker proxies such as Nexus fail to fetch those with
+# "could not fetch content descriptor ... from remote: not found".
+#
+# Push target: docker.io/<DOCKERHUB_USERNAME>/mlflow. Requires the repository
+# secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: MLflow version to build (e.g. 3.16.1)
+        required: true
+        default: "3.16.1"
+        type: string
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: build-full-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+cache-mode: none
+
+jobs:
+  build:
+    # Upstream publishes its own official images; this pipeline is for forks.
+    if: github.repository != 'mlflow/mlflow'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Free disk space
+        uses: ./.github/actions/free-disk-space
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+
+      - name: Log in to Docker Hub
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${INPUT_VERSION:-}"
+          if [[ -z "${version}" && "${REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            version="${REF_NAME#v}"
+          fi
+          version="${version:-3.16.1}"
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected an MLflow version like 3.16.1, got '${version}'"
+            exit 1
+          fi
+          echo "value=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push full image
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${DOCKERHUB_USERNAME}" || -z "${DOCKERHUB_TOKEN}" ]]; then
+            echo "::error::Set the repository secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN."
+            exit 1
+          fi
+          # `docker/build-push-action` cannot emit Docker schema2 media types,
+          # and the default output is an OCI index. Call buildx directly so the
+          # pushed manifest is application/vnd.docker.distribution.manifest.v2+json.
+          docker buildx build \
+            --file docker/Dockerfile.full \
+            --build-arg "VERSION=${VERSION}" \
+            --platform linux/amd64 \
+            --provenance=false \
+            --sbom=false \
+            -t "docker.io/${DOCKERHUB_USERNAME}/mlflow:v${VERSION}" \
+            --output type=image,push=true,oci-mediatypes=false \
+            docker

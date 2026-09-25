@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+
+# Build the MLflow web UI. The Python package ships these assets as
+# `mlflow/server/js/build`, which a plain source install does not produce.
+# `.dockerignore` drops dotfiles, so the two dotenv settings CRA needs and the
+# yarn config are recreated here instead of copied.
+FROM node:24-bookworm-slim AS ui
+
+ENV DISABLE_ESLINT_PLUGIN=true \
+    SKIP_PREFLIGHT_CHECK=true
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src/mlflow/server/js
+COPY mlflow/server/js/ ./
+RUN printf 'nodeLinker: node-modules\nnpmMinimalAgeGate: 7d\n' > .yarnrc.yml
+RUN node yarn/releases/yarn-4.12.0.cjs install --immutable \
+    && node yarn/releases/yarn-4.12.0.cjs build
+
+# Assemble the server image from the local source tree so fork-specific
+# changes (including a custom authorization_function module) are included.
+FROM python:3.11-slim-trixie@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff
+
+# MLflow pip extras. `auth` enables the built-in authentication/RBAC app.
+ARG EXTRAS=extras,azure,db,gateway,genai,auth
+
+WORKDIR /app
+COPY . /app
+COPY --from=ui /src/mlflow/server/js/build /app/mlflow/server/js/build
+RUN pip install --no-cache-dir ".[${EXTRAS}]"
+
+EXPOSE 5000
+ENTRYPOINT ["mlflow"]
+CMD ["server", "--host", "0.0.0.0", "--port", "5000"]
