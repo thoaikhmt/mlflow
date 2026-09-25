@@ -12,5 +12,6 @@ RUN pip install --upgrade pip setuptools wheel && \
         python-jose \
         cryptography \
         pyyaml \
-        requests && \
+        requests \
+        psycopg[binary] && \
     pip install --no-cache-dir -e .

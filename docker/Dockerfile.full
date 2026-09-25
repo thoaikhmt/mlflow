@@ -11,4 +11,5 @@ RUN pip install --upgrade pip setuptools wheel && \
         python-jose \
         cryptography \
         pyyaml \
-        requests
+        requests \
+        psycopg[binary]
