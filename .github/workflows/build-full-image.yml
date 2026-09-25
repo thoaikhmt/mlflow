@@ -102,6 +102,6 @@ jobs:
             --platform linux/amd64 \
             --provenance=false \
             --sbom=false \
-            -t "docker.io/${DOCKERHUB_USERNAME}/mlflow:v${VERSION}" \
+            -t "docker.io/${DOCKERHUB_USERNAME}/mlflow:${VERSION}" \
             --output type=image,push=true,oci-mediatypes=false \
             docker
