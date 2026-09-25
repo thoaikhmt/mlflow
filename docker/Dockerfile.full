@@ -1,6 +1,14 @@
 FROM python:3.11-slim-trixie@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff
 ARG VERSION
 
-# Install MLflow with optional extras (without 'azure' which is custom)
-RUN pip install --no-cache-dir mlflow[extras,db,gateway,genai]==$VERSION && \
-    pip install --no-cache-dir azure-identity azure-storage-blob msal python-jose cryptography
+# Install core dependencies first
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir \
+        mlflow \
+        azure-identity \
+        azure-storage-blob \
+        msal \
+        python-jose \
+        cryptography \
+        pyyaml \
+        requests
