@@ -21,19 +21,20 @@ test/azure_sso_test.py     the assertions (login, groups, admin, denials, UI)
 ## Image
 
 ```
-docker.io/thoaikhmt/mlflow-azure-auth:v1.2.3
+docker.io/thoaikhmt/mlflow-azure-auth:v1.2.4
 ```
 
 Built and pushed by the `.github/workflows/build-push.yaml` workflow: every push
 to `main` publishes `:latest`, and every `v*` git tag publishes an image with the
-same name as the tag (the current release is `v1.2.3`). It is the official
+same name as the tag (the current release is `v1.2.4`). It is the official
 `ghcr.io/mlflow/mlflow:v3.17.0-full` image plus:
 
 | Component          | Version |
 | ------------------ | ------- |
 | MLflow             | 3.17.0 (pinned, `-full`) |
-| mlflow-oidc-auth   | vendored (`mlflow-oidc-auth/`) |
+| mlflow-oidc-auth   | vendored (`mlflow-oidc-auth/`), installed with the `[cache]` extra |
 | psycopg2 / boto3   | from the `-full` base |
+| redis              | from the plugin's `[cache]` extra (for `CACHE_BACKEND=redis`) |
 
 ### Vendored plugin
 
@@ -147,7 +148,7 @@ docker run --rm -p 5000:5000 \
   -e OIDC_USERS_DB_URI="postgresql+psycopg2://mlflow:pass@db:5432/mlflow" \
   -e OIDC_ALEMBIC_VERSION_TABLE="oidc_alembic_version" \
   -e SECRET_KEY="$(openssl rand -hex 32)" \
-  thoaikhmt/mlflow-azure-auth:v1.2.3 \
+  thoaikhmt/mlflow-azure-auth:v1.2.4 \
   mlflow server --app-name oidc-auth --host 0.0.0.0 --port 5000 \
     --backend-store-uri postgresql:// --default-artifact-root s3://mlflow/
 ```
@@ -297,6 +298,8 @@ Notes:
   requires deactivation to deny on the very next request.
 - With the default local backend the cache is per process; use
   `CACHE_BACKEND=redis` to share it (and the permission caches) across replicas.
+  The image ships the plugin's `[cache]` extra, so the `redis` client is already
+  installed — only `CACHE_REDIS_URL` needs to point at your Redis server.
 
 
 ### Database schema

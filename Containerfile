@@ -7,9 +7,11 @@
 # the plugin and pin MLflow so pip cannot drift the MLflow version the plugin
 # was validated against (`mlflow-oidc-auth` allows `mlflow>=3.16,<4`).
 #
-# Only the base package is installed on purpose: the `[saml]`/`[full]` extras
-# build `xmlsec` from source and the `-full` image lacks the dev headers, and
-# Entra ID SSO is plain OIDC.
+# The `[cache]` extra is installed so the plugin can use the Redis cache backend
+# (`CACHE_BACKEND=redis`) to share session/permission caches across replicas. The
+# `[saml]`/`[full]` extras are deliberately NOT installed: they build `xmlsec`
+# from source and the `-full` image lacks the dev headers, and Entra ID SSO is
+# plain OIDC.
 #
 # The plugin source is VENDORED under ./mlflow-oidc-auth so we own and can patch
 # it (including the --static-prefix handling in `_prefix.py`). Installing
@@ -57,7 +59,7 @@ COPY --from=ui /plugin/mlflow_oidc_auth/ui /opt/mlflow-oidc-auth/mlflow_oidc_aut
 
 RUN pip install --no-cache-dir \
         "mlflow==${MLFLOW_VERSION}" \
-        /opt/mlflow-oidc-auth
+        "/opt/mlflow-oidc-auth[cache]"
 
 # Fail the build if the plugin (or a driver it needs) is not importable, or if
 # the admin UI did not make it into the installed package. The Entra ID group
@@ -68,6 +70,7 @@ import os
 
 import mlflow
 import mlflow_oidc_auth  # noqa: F401  (registers the `oidc-auth` MLflow app)
+import redis  # noqa: F401  (Redis cache backend, installed via the [cache] extra)
 from mlflow_oidc_auth.plugins import group_detection_microsoft_entra_id  # noqa: F401
 
 ui_dir = os.path.join(os.path.dirname(mlflow_oidc_auth.__file__), "ui")
@@ -79,4 +82,5 @@ print("mlflow-oidc-auth       ", md.version("mlflow-oidc-auth"))
 print("admin UI               ", ui_dir)
 print("psycopg2-binary        ", md.version("psycopg2-binary"))
 print("boto3                  ", md.version("boto3"))
+print("redis                  ", md.version("redis"))
 PY
