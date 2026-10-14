@@ -10,7 +10,7 @@ a **simulated Entra ID** service plus an end-to-end integration test that drives
 the real Authorization Code + PKCE flow.
 
 ```
-Containerfile              official mlflow:v3.17.0-full + vendored mlflow-oidc-auth
+Containerfile              official mlflow:v3.17.1-full + vendored mlflow-oidc-auth
 mlflow-oidc-auth/          vendored plugin source (see "Vendored plugin" below)
 test/mock-azure/config.json  simulated Entra ID tenant
 test/run-integration.sh    spins up MLflow + the mock and runs the test
@@ -21,17 +21,17 @@ test/azure_sso_test.py     the assertions (login, groups, admin, denials, UI)
 ## Image
 
 ```
-docker.io/thoaikhmt/mlflow-azure-auth:v1.2.4
+docker.io/thoaikhmt/mlflow-azure-auth:v1.2.5
 ```
 
 Built and pushed by the `.github/workflows/build-push.yaml` workflow: every push
 to `main` publishes `:latest`, and every `v*` git tag publishes an image with the
-same name as the tag (the current release is `v1.2.4`). It is the official
-`ghcr.io/mlflow/mlflow:v3.17.0-full` image plus:
+same name as the tag (the current release is `v1.2.5`). It is the official
+`ghcr.io/mlflow/mlflow:v3.17.1-full` image plus:
 
 | Component          | Version |
 | ------------------ | ------- |
-| MLflow             | 3.17.0 (pinned, `-full`) |
+| MLflow             | 3.17.1 (pinned, `-full`) |
 | mlflow-oidc-auth   | vendored (`mlflow-oidc-auth/`), installed with the `[cache]` extra |
 | psycopg2 / boto3   | from the `-full` base |
 | redis              | from the plugin's `[cache]` extra (for `CACHE_BACKEND=redis`) |
@@ -78,8 +78,25 @@ Patches are carried on top of the vendored source:
   `<provider>:/<model>` (matched against the endpoint's model definition).
   Disable with `EXTEND_MLFLOW_DEFAULT_MODEL=false`.
 
+One patch is on MLflow itself, applied by the `Containerfile` after `pip install`
+(not on the vendored plugin):
+
+- **MLflow UI — auto-refresh the GenAI "Evaluations" run list.** The experiment
+  Evaluations tab lists runs with `POST /ajax-api/2.0/mlflow/runs/search`
+  (`useExperimentEvaluationRunsData`: `cacheTime: 0`, `refetchOnWindowFocus:
+  false`) and only refetches when the UI's own "Evaluate traces" button
+  invalidates that query. Evaluation runs created outside the UI — a
+  notebook/CLI `mlflow.genai.evaluate` loop — fire no invalidation, and the
+  experiment page keeps the tab mounted, so the list stayed frozen on its first
+  snapshot until a full page reload (only the first run visible). A build step
+  adds `refetchInterval: 5e3` to that one query in the pinned UI bundle and
+  fails the build if the query cannot be located (so a future MLflow bump cannot
+  silently ship an unpatched UI). MLflow itself is unchanged; the request lands
+  in the plugin like any other.
+
 Bump the vendored copy by re-syncing `mlflow-oidc-auth/` and re-applying the
-patches above.
+plugin patches above; the MLflow UI patch is anchored to the query and is
+re-checked on every MLflow bump by the build assertion.
 
 ## Integration test (simulated Azure Entra ID)
 
@@ -148,7 +165,7 @@ docker run --rm -p 5000:5000 \
   -e OIDC_USERS_DB_URI="postgresql+psycopg2://mlflow:pass@db:5432/mlflow" \
   -e OIDC_ALEMBIC_VERSION_TABLE="oidc_alembic_version" \
   -e SECRET_KEY="$(openssl rand -hex 32)" \
-  thoaikhmt/mlflow-azure-auth:v1.2.4 \
+  thoaikhmt/mlflow-azure-auth:v1.2.5 \
   mlflow server --app-name oidc-auth --host 0.0.0.0 --port 5000 \
     --backend-store-uri postgresql:// --default-artifact-root s3://mlflow/
 ```

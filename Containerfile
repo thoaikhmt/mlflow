@@ -42,9 +42,9 @@ RUN yarn --cwd web-react build \
     && test -f mlflow_oidc_auth/ui/index.html
 
 # ── Stage 2: runtime image (official -full + vendored plugin + built UI) ────
-FROM ghcr.io/mlflow/mlflow:v3.17.0-full
+FROM ghcr.io/mlflow/mlflow:v3.17.1-full
 
-ARG MLFLOW_VERSION=3.17.0
+ARG MLFLOW_VERSION=3.17.1
 ARG MLFLOW_OIDC_AUTH_VERSION=7.0.0
 
 USER root
@@ -60,6 +60,50 @@ COPY --from=ui /plugin/mlflow_oidc_auth/ui /opt/mlflow-oidc-auth/mlflow_oidc_aut
 RUN pip install --no-cache-dir \
         "mlflow==${MLFLOW_VERSION}" \
         "/opt/mlflow-oidc-auth[cache]"
+
+# ── Patch MLflow's UI: auto-refresh the GenAI "Evaluations" run list ────────
+# The experiment Evaluations tab lists runs via POST /ajax-api/2.0/mlflow/runs/search
+# (useExperimentEvaluationRunsData: cacheTime 0, refetchOnWindowFocus false) and only
+# refetches when the UI's own "Evaluate traces" button invalidates that query. Eval runs
+# created outside the UI — a notebook/CLI mlflow.genai.evaluate loop — fire no such
+# invalidation, and the experiment page keeps the tab mounted, so the list stayed frozen
+# on its first snapshot until a full page reload. Give exactly that one query a refetch
+# interval so new eval runs appear on their own. The query is located by its
+# `queryKey:["SEARCH_RUNS",` prefix (the other match, the "Evaluate traces" button's
+# invalidateQueries call, carries no query options), so only it is rewritten; the build
+# fails loudly if a future MLflow bump rewords the query rather than silently shipping an
+# unpatched UI.
+RUN python - <<'PY'
+import glob
+import os
+import sys
+
+import mlflow
+
+static_js = os.path.join(os.path.dirname(mlflow.__file__), "server", "js", "build", "static", "js")
+anchor = 'queryKey:["SEARCH_RUNS",'
+before = "cacheTime:0,refetchOnWindowFocus:!1,retry:!1,enabled:"
+after = "cacheTime:0,refetchOnWindowFocus:!1,retry:!1,refetchInterval:5e3,enabled:"
+
+patched = []
+for path in glob.glob(os.path.join(static_js, "**", "*.js"), recursive=True):
+    with open(path, "r", encoding="utf-8") as f:
+        source = f.read()
+    if anchor not in source:
+        continue
+    index = source.find(before, source.find(anchor))
+    if index == -1:
+        continue
+    patched.append((path, source[:index] + source[index:].replace(before, after, 1)))
+
+if len(patched) != 1:
+    sys.exit(f"eval-runs auto-refresh patch: expected exactly 1 query, found {len(patched)}")
+
+path, patched_source = patched[0]
+with open(path, "w", encoding="utf-8") as f:
+    f.write(patched_source)
+print("patched eval-runs auto-refresh in", os.path.basename(path))
+PY
 
 # Fail the build if the plugin (or a driver it needs) is not importable, or if
 # the admin UI did not make it into the installed package. The Entra ID group
