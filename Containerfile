@@ -42,9 +42,9 @@ RUN yarn --cwd web-react build \
     && test -f mlflow_oidc_auth/ui/index.html
 
 # ── Stage 2: runtime image (official -full + vendored plugin + built UI) ────
-FROM ghcr.io/mlflow/mlflow:v3.17.1-full
+FROM ghcr.io/mlflow/mlflow:v3.17.2-full
 
-ARG MLFLOW_VERSION=3.17.1
+ARG MLFLOW_VERSION=3.17.2
 ARG MLFLOW_OIDC_AUTH_VERSION=7.0.0
 
 USER root
